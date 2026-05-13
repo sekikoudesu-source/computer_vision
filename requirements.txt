@@ -1,0 +1,12 @@
+# Core Computer Vision Libraries (Video I/O, image processing, feature extraction)
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+
+# Matrix & Scientific Computing (Fundamental/Essential matrix calculations, SVD)
+numpy>=1.24.0
+
+# Scientific Optimization (Non-linear optimization, used for Bundle Adjustment, etc.)
+scipy>=1.10.0
+
+# Data Visualization (Optional: plotting epipolar lines, feature matches, 3D point clouds)
+matplotlib>=3.7.0
