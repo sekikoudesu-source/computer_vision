@@ -4,7 +4,11 @@ from scipy.optimize import least_squares
 from gooey import Gooey, GooeyParser
 import matplotlib.pyplot as plt
 import sys
-def pick_matching_points(img_path1, img_path2, num_pairs=8,save=True):
+import os
+import json
+
+
+def pick_matching_points(img_path1, img_path2, num_pairs=8, save_path=None):
     # 1. 安全读取图像
     img1 = cv2.imdecode(np.fromfile(img_path1, dtype=np.uint8), -1)
     img2 = cv2.imdecode(np.fromfile(img_path2, dtype=np.uint8), -1)
@@ -12,7 +16,7 @@ def pick_matching_points(img_path1, img_path2, num_pairs=8,save=True):
     if img1 is None or img2 is None:
         raise ValueError(f"[Error] Failed to read images.")
 
-    # 2. 缩放用于交互显示（保持逻辑不变）
+    # 2. 缩放用于交互显示
     h1_orig, w1_orig = img1.shape[:2]
     h2_orig, w2_orig = img2.shape[:2]
     target_h = max(h1_orig, h2_orig)
@@ -28,7 +32,7 @@ def pick_matching_points(img_path1, img_path2, num_pairs=8,save=True):
         'w1_display': img1_resized.shape[1],
         'expected_pairs': num_pairs,
         'img_display': img_combined.copy(),
-        'window_name': "Interactive Point Picker"
+        'window_name': f"Interactive Point Picker (Target: {num_pairs} pairs)"
     }
 
     def mouse_callback(event, x, y, flags, param):
@@ -37,14 +41,14 @@ def pick_matching_points(img_path1, img_path2, num_pairs=8,save=True):
             idx = len(s['pts2']) + 1
             if len(s['pts2']) >= s['expected_pairs']: return
 
-            if len(s['pts1']) == len(s['pts2']): # 点左图
+            if len(s['pts1']) == len(s['pts2']):  # 点左图
                 if x < s['w1_display']:
                     s['pts1'].append((x, y))
                     cv2.circle(s['img_display'], (x, y), 5, (0, 0, 255), -1)
                     cv2.putText(s['img_display'], str(idx), (x + 8, y - 8),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     cv2.imshow(s['window_name'], s['img_display'])
-            elif len(s['pts1']) > len(s['pts2']): # 点右图
+            elif len(s['pts1']) > len(s['pts2']):  # 点右图
                 if x >= s['w1_display']:
                     s['pts2'].append((x, y))
                     cv2.circle(s['img_display'], (x, y), 5, (0, 255, 0), -1)
@@ -59,12 +63,11 @@ def pick_matching_points(img_path1, img_path2, num_pairs=8,save=True):
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-    # --- 7. 坐标转换与【新增】保存逻辑 ---
+    # --- 7. 坐标转换与保存逻辑 ---
     final_pts1, final_pts2 = [], []
     valid_pairs = min(len(state['pts1']), len(state['pts2']))
 
-    # 为了报告 A-2-ii，创建一个原始分辨率的对比图
-    # 重新拼接原始图
+    # 重新拼接原始图用于保存高质量结果
     vis_h = max(h1_orig, h2_orig)
     vis_w = w1_orig + w2_orig
     vis_img = np.zeros((vis_h, vis_w, 3), dtype=np.uint8)
@@ -81,23 +84,20 @@ def pick_matching_points(img_path1, img_path2, num_pairs=8,save=True):
         y2_raw = state['pts2'][i][1] / scale2
         final_pts2.append([x2_raw, y2_raw])
 
-        # 在 vis_img 上绘制连线（用于报告）
+        # 在 vis_img 上绘制连线
         p1 = (int(x1_raw), int(y1_raw))
         p2 = (int(x2_raw) + w1_orig, int(y2_raw))
-        color = (0, 255, 255) # 黄色连线
+        color = (0, 255, 255)  # 黄色连线
         cv2.line(vis_img, p1, p2, color, 2)
-        cv2.circle(vis_img, p1, 10, (0, 0, 255), -1) # 左点红色
-        cv2.circle(vis_img, p2, 10, (0, 255, 0), -1) # 右点绿色
-        cv2.putText(vis_img, str(i+1), (p1[0]+15, p1[1]), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3)
+        cv2.circle(vis_img, p1, 10, (0, 0, 255), -1)  # 左点红色
+        cv2.circle(vis_img, p2, 10, (0, 255, 0), -1)  # 右点绿色
+        cv2.putText(vis_img, str(i + 1), (p1[0] + 15, p1[1]), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
 
-    # 保存图像
-    if save:
-        save_name = "point_matches.png"
-        cv2.imwrite(save_name, vis_img)
-        print(f"\n[+] 满足 A-2-ii 的连线图已保存至: {save_name}")
+    if save_path:
+        cv2.imwrite(save_path, vis_img)
+        print(f"\n[+] Visual confirmation image saved to: {save_path}")
 
     return np.array(final_pts1, dtype=np.float32), np.array(final_pts2, dtype=np.float32)
-
 
 
 def draw_epipolar_lines(img1_path, img2_path, F, pts1, pts2, savepath):
@@ -106,11 +106,8 @@ def draw_epipolar_lines(img1_path, img2_path, F, pts1, pts2, savepath):
     h, w = img2.shape[:2]
 
     colors = plt.cm.get_cmap('hsv', len(pts1))
-
     pts1_homo = np.column_stack((pts1, np.ones(len(pts1))))
-
     lines = (F @ pts1_homo.T).T
-
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7))
     ax1.imshow(cv2.cvtColor(img1, cv2.COLOR_BGR2RGB))
@@ -142,13 +139,13 @@ def draw_epipolar_lines(img1_path, img2_path, F, pts1, pts2, savepath):
     ax2.set_xlim(0, w)
     ax2.set_ylim(h, 0)
 
-
     ax1.set_title("Left Image: Selected Points")
     ax2.set_title("Right Image: Epipolar Lines")
 
     plt.tight_layout()
     plt.savefig(savepath, dpi=300, bbox_inches='tight')
     plt.show()
+
 
 def normalize_points(pts):
     centroid = np.mean(pts, axis=0)
@@ -197,27 +194,13 @@ def compute_fundamental_matrix_8pt(pts1, pts2):
     return F
 
 
-def check_matrix_rank_by_eigenvalues(F, threshold=1e-10):
-    """
-    Check the rank of the fundamental matrix F by analyzing its eigenvalues,
-    without using the built-in rank function.
-
-    Parameters:
-        F: 3x3 fundamental matrix.
-        threshold: A tiny threshold to determine if a value is effectively 0
-                   (to handle floating-point precision errors).
-    """
+def check_matrix_rank_by_eigenvalues(F, threshold=1e-13):
     print("=" * 50)
     print("A-3: Verify the Rank of the F Matrix")
     print("=" * 50)
 
-    # Method 1: Eigenvalue Analysis of F^T * F
-    # F^T * F is a symmetric positive semi-definite matrix,
-    # so its eigenvalues are guaranteed to be non-negative real numbers.
     FtF = F.T @ F
     eigenvalues, eigenvectors = np.linalg.eig(FtF)
-
-    # Sort eigenvalues in descending order
     sorted_eigenvalues = np.sort(eigenvalues)[::-1]
 
     print("\n--- Method 1: Based on Eigenvalues of F^T * F ---")
@@ -225,13 +208,9 @@ def check_matrix_rank_by_eigenvalues(F, threshold=1e-10):
     for i, val in enumerate(sorted_eigenvalues):
         print(f"  Eigenvalue {i + 1}: {val:.6e}")
 
-    # The rank is the number of eigenvalues greater than the threshold
     rank_eig = np.sum(sorted_eigenvalues > threshold)
     print(f"  -> Inferred rank from eigenvalues: {rank_eig}")
 
-    # Method 2: Singular Value Decomposition (SVD) Analysis
-    # This is the standard method used in computer vision.
-    # Singular values of F are essentially the square roots of the eigenvalues of F^T * F.
     U, singular_values, Vt = np.linalg.svd(F)
 
     print("\n--- Method 2: Based on Singular Values of F ---")
@@ -245,14 +224,8 @@ def check_matrix_rank_by_eigenvalues(F, threshold=1e-10):
 
     if rank_svd == 2:
         print("✅ Verification Successful: The 3rd eigenvalue/singular value is close to 0.")
-        print("   The rank of matrix F is correctly limited to 2.")
-        print("   This satisfies the Epipolar Constraint, indicating a unique epipole exists.")
     else:
         print(f"❌ Warning: The rank of the matrix is {rank_svd}.")
-        if rank_svd == 3:
-            print("   This usually means the Rank-2 constraint was not enforced on the initially")
-            print("   estimated F matrix (by forcing the smallest singular value to 0).")
-            print("   A full-rank F matrix will cause epipolar lines to not intersect at a single epipole.")
 
 
 def build_omega_star(f, cu, cv):
@@ -273,7 +246,6 @@ def kruppa_equations(F, w, h):
     s1, s2 = S[0], S[1]
     V = Vt.T
 
-    # --- B-7-i: Estimate Focal Lengths ---
     def residuals_f(params):
         f1, f2 = params
         cu, cv = w / 2.0, h / 2.0
@@ -301,7 +273,6 @@ def kruppa_equations(F, w, h):
     print("[B-7-i] Estimated Focal Lengths:")
     print(f"  -> f1 = {f1_est:.2f} px, f2 = {f2_est:.2f} px")
 
-    # --- B-7-ii: Estimate Image Center ---
     f_avg = (f1_est + f2_est) / 2.0
 
     def residuals_c(params):
@@ -357,60 +328,102 @@ def verify_parameters(f1, f2, cu, cv, w, h):
         print("   [WARNING] The center has drifted too far. (Typical for noisy F matrices).")
 
 
-
 @Gooey(
     program_name="8-Point Algorithm - Epipolar Line Tool",
-    language='english',  # Set Gooey built-in UI to English
-    default_size=(650, 600),
+    language='english',
+    default_size=(700, 780),
     header_bg_color='#f0f0f0'
 )
 def main():
     parser = GooeyParser(
-        description="Select the left and right images to compute the fundamental matrix F and draw epipolar lines.")
+        description="Select left/right images and an output folder to compute F and draw epipolar lines.")
 
-    # Configure the File Chooser group
     file_group = parser.add_argument_group("Image Configuration")
     file_group.add_argument(
         'IMAGE_LEFT',
         metavar='Left Image (Image 1)',
         widget='FileChooser',
-        help="Select the left view image to extract coordinates"
+        help="Select the left view image"
     )
     file_group.add_argument(
         'IMAGE_RIGHT',
         metavar='Right Image (Image 2)',
         widget='FileChooser',
-        help="Select the right view image to extract coordinates"
+        help="Select the right view image"
     )
-    # Parse the file paths selected by the user in the UI
+    file_group.add_argument(
+        '--output_dir',
+        metavar='Output Directory (Save Path)',
+        widget='DirChooser',
+        default=os.getcwd(),
+        help="Select the folder where result images will be saved"
+    )
+    file_group.add_argument(
+        '--load_points',
+        metavar='Load Saved Points (Optional)',
+        widget='FileChooser',
+        default="",
+        help="[Optional] Select a previously saved .json file to skip manual point picking."
+    )
+
     action_group = parser.add_argument_group("Additional Features")
+
+    # [新增] 选取点数量输入
+    action_group.add_argument(
+        '--num_points',
+        metavar='Number of Points to Pick',
+        type=int,
+        default=8,
+        help="Specify the number of matching points to select (default is 8)."
+    )
+
     action_group.add_argument(
         '--verify_extra',
         metavar='Enable Extra Point Verification (A-5)',
-        help="Check this to pick 3 NEW pairs after the initial computation to verify the Epipolar Lines.",
+        help="Pick 3 NEW pairs after initial computation to verify Epipolar Lines.",
         action='store_true'
     )
     action_group.add_argument(
         '--run_kruppa', metavar='Run Kruppa Intrinsics Estimation (B-7 & B-8)',
-        help="Check this to estimate camera focal length and image center using Kruppa equations.",
+        help="Estimate camera focal length and image center using Kruppa equations.",
         action='store_true',
         default=True
     )
     args = parser.parse_args()
 
     try:
+        out_dir = args.output_dir
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+
         img_temp = cv2.imdecode(np.fromfile(args.IMAGE_LEFT, dtype=np.uint8), -1)
         if img_temp is None:
             raise ValueError("Could not read left image. Please check path.")
         img_height, img_width = img_temp.shape[:2]
-        # Call your encapsulated 'tools' using the paths provided by Gooey
-        print(f">>> Processing started...\nLeft image: {args.IMAGE_LEFT}\nRight image: {args.IMAGE_RIGHT}")
-        sys.stdout.flush()  # Force refresh the output to the Gooey console
 
-        # Note: Make sure the prints inside your 'tools.py' are also translated if you want a 100% English console!
-        pts_left, pts_right = pick_matching_points(args.IMAGE_LEFT, args.IMAGE_RIGHT)
+        print(f">>> Processing started...\nOutput Directory: {out_dir}")
+        sys.stdout.flush()
 
-        # Compute F matrix
+        points_file = os.path.join(out_dir, "saved_points.json")
+
+        if args.load_points and os.path.isfile(args.load_points):
+            print(f">>> Loading points from: {args.load_points}")
+            with open(args.load_points, 'r') as f:
+                data = json.load(f)
+                pts_left = np.array(data['pts_left'], dtype=np.float32)
+                pts_right = np.array(data['pts_right'], dtype=np.float32)
+            print(f">>> Successfully loaded {len(pts_left)} point pairs.")
+        else:
+            print(f">>> No points file provided. Starting manual point selection for {args.num_points} pairs...")
+            matches_save_path = os.path.join(out_dir, "point_matches.png")
+            # [修改] 传入 args.num_points
+            pts_left, pts_right = pick_matching_points(args.IMAGE_LEFT, args.IMAGE_RIGHT, num_pairs=args.num_points,
+                                                       save_path=matches_save_path)
+
+            with open(points_file, 'w') as f:
+                json.dump({'pts_left': pts_left.tolist(), 'pts_right': pts_right.tolist()}, f)
+            print(f"[+] Matching points saved to JSON: {points_file}")
+
         F_matrix = compute_fundamental_matrix_8pt(pts_left, pts_right)
 
         print("\n>>> 8-Point Algorithm output F:")
@@ -419,9 +432,10 @@ def main():
         check_matrix_rank_by_eigenvalues(F_matrix)
         sys.stdout.flush()
 
-        # Draw epipolar lines
-        draw_epipolar_lines(args.IMAGE_LEFT, args.IMAGE_RIGHT, F_matrix, pts_left, pts_right,'epipolar_lines_2.png')
-        print("\n>>> Processing complete!")
+        epipolar_save_path = os.path.join(out_dir, "epipolar_lines.png")
+        draw_epipolar_lines(args.IMAGE_LEFT, args.IMAGE_RIGHT, F_matrix, pts_left, pts_right, epipolar_save_path)
+        print(f"\n[+] Epipolar lines saved to: {epipolar_save_path}")
+
         if args.verify_extra:
             print("\n" + "=" * 50)
             print(" PHASE 2: A-5 Extra Point Verification")
@@ -429,22 +443,23 @@ def main():
             print(">>> Please select 3 completely NEW point pairs in the image window.")
             sys.stdout.flush()
 
-            # Reuse pick_matching_points to collect 3 NEW pairs
-            extra_pts_left, extra_pts_right = pick_matching_points(args.IMAGE_LEFT, args.IMAGE_RIGHT, num_pairs=3,save=False)
+            extra_pts_left, extra_pts_right = pick_matching_points(args.IMAGE_LEFT, args.IMAGE_RIGHT, num_pairs=3,
+                                                                   save_path=None)
 
             print("\n>>> Drawing epipolar lines for the EXTRA points...")
             sys.stdout.flush()
 
-            # Reuse draw_epipolar_lines!
-            # It will draw the new points, and you will clearly see if the right points fall on the new lines.
-            draw_epipolar_lines(args.IMAGE_LEFT, args.IMAGE_RIGHT, F_matrix, extra_pts_left, extra_pts_right,'epipolar_lines_verify.png')
+            verify_save_path = os.path.join(out_dir, "epipolar_lines_verify.png")
+            draw_epipolar_lines(args.IMAGE_LEFT, args.IMAGE_RIGHT, F_matrix, extra_pts_left, extra_pts_right,
+                                verify_save_path)
+            print(f"\n[+] Extra verification lines saved to: {verify_save_path}")
 
-            print("\n>>> Extra point verification complete!")
         if args.run_kruppa:
             f1, f2, cu, cv = kruppa_equations(F_matrix, img_width, img_height)
             verify_parameters(f1, f2, cu, cv, img_width, img_height)
             sys.stdout.flush()
-        print("\n>>> Processing complete!")
+
+        print("\n>>> All processing complete!")
     except Exception as e:
         print(f"\n[!] Error: {e}")
 

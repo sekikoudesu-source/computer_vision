@@ -163,8 +163,9 @@ def main():
         plt.plot(pt[0], pt[1], 'bo', markersize=8)
 
     plt.tight_layout()
-    plt.show()
     plt.savefig("test_result.png")
+    plt.show()
+
 
 
 if __name__ == "__main__":

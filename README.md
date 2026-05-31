@@ -35,3 +35,17 @@ The project primarily focuses on **Camera Geometry**, **Multiple View Geometry**
 It is recommended to use Python 3.8+ and install the following dependencies:
 ```bash
 pip install -r requirements.txt
+```
+
+## 📁 Assignments & Implementations
+
+### Assignment 1
+- **Feature Matching**: Implementation and comparison of SIFT, ORB, and AKAZE feature descriptors.
+- **8-Point Algorithm**: Computation of the Fundamental Matrix and visualization of epipolar lines.
+
+### Assignment 2 (Located in `Assignment_2/`)
+- **5-Point Algorithm vs 8-Point Algorithm**: Python implementation utilizing RANSAC to compute the Essential Matrix, with robust filtering of inliers and epipolar geometry comparisons.
+- **Photometric Stereo & 3D Reconstruction**: 
+  - Computed surface normals (Albedo and Normal maps) using the linear least-squares method.
+  - Implemented the **Frankot-Chellappa algorithm** (Poisson surface reconstruction) in the frequency domain to integrate surface normals into a continuous 3D depth map.
+  - Successfully reconstructed detailed 3D structures on multiple datasets (Buddha, Cat, Owl).
